@@ -1,0 +1,204 @@
+---
+title: "Mini Project 4"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(boot)
+library(Metrics)
+library(leaps)
+library(glmnet)
+library(bestglm)
+```
+
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+# loading in data
+wine <- read.csv(file = "wine.txt", header = TRUE, sep = "\t")
+db <- read.csv(file = "diabetes.csv", header = TRUE, sep = ",")
+```
+
+#1a
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+fullModel <- lm(Quality ~ ., data = wine)
+mean(fullModel$residuals^2)
+```
+
+#1b
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+fullModelSubsets <- regsubsets(Quality ~ ., data = wine, nvmax = 6)
+subsetSummary <- summary(fullModelSubsets)
+which.max(subsetSummary$adjr2)
+coefb <- coef(fullModelSubsets, 4)
+names(coefb)[-1]
+
+fitb <- glm(Quality ~ Clarity + Aroma + Flavor + Oakiness, data = wine)
+errb <- cv.glm(wine, fitb)
+errb$delta[1]
+```
+
+#1c
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+fullModelForward = regsubsets(Quality ~ ., data = wine, nvmax = 6, 
+	method = "forward")
+forwardSummary <- summary(fullModelForward)
+which.max(forwardSummary$adjr2)
+coefc <- coef(fullModelForward, 4)
+names(coefc)[-1]
+
+fitc <- glm(Quality ~ Clarity + Aroma + Flavor + Oakiness, data = wine)
+errc <- cv.glm(wine, fitc)
+errc$delta[1]
+```
+
+#1d
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+fullModelBackward = regsubsets(Quality ~ ., data = wine, nvmax = 6, 
+	method = "backward")
+backwardSummary <- summary(fullModelBackward)
+which.max(backwardSummary$adjr2)
+coefd <- coef(fullModelBackward, 4)
+names(coefd)[-1]
+
+fitd <- glm(Quality ~ Clarity + Aroma + Flavor + Oakiness, data = wine)
+errd <- cv.glm(wine, fitd)
+errd$delta[1]
+```
+
+#1e
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+Y <- wine$Quality
+X <- model.matrix(Quality ~ ., data = wine)[, -1]
+
+ctrl <- trainControl(method='LOOCV')
+grid <- 10^seq(10, -2, length = 100)
+num <- nrow(X)
+
+opt0 <- cv.glmnet(X, Y, lambda = grid, nfolds = num, alpha = 0)
+minLame <- opt0$lambda.min
+minLame
+
+ridgeReg <- train(y = Y, x = X, method = 'glmnet', 
+                  tuneGrid = expand.grid(alpha = 0, lambda = minLame), 
+                  trControl = ctrl)
+ridgeReg
+
+ridgeReg$results[['RMSE']]^2
+```
+
+#1f
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+ctrl <- trainControl(method='LOOCV')
+grid <- 10^seq(10, -2, length=100)
+num <- nrow(X)
+
+opt1 <- cv.glmnet(X, Y,lambda = grid, nfolds = num, alpha = 1)
+minLamf <- opt1$lambda.min
+minLamf
+
+lasso <- train(y = Y, x = X, method = 'glmnet', 
+               tuneGrid = expand.grid(alpha = 1, lambda = minLamf), 
+               trControl = ctrl)
+lasso
+
+lasso$results[['RMSE']]**2
+```
+
+#2a
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+db$Outcome <- as.factor(db$Outcome)
+
+glmFull <- glm(db$Outcome ~ ., data = db, family = "binomial")
+mean(glmFull$residuals^2)
+```
+
+#2b
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+glmBest <- bestglm(Xy = db, family = binomial, IC = "AIC", method = "exhaustive")
+glmBest$BestModel
+
+tCtrl <- trainControl(method = "cv", number = 10)
+modelBest <- train(Outcome ~ . -SkinThickness.., data = db, method = "glm", 
+                   family = "binomial", trControl = tCtrl)
+
+print(modelBest)
+1 - modelBest$results[["Accuracy"]]
+```
+
+#2c
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+glmForward <- bestglm(Xy = db, family = binomial, IC = "AIC", method = "forward")
+glmForward$BestModel
+
+tCtrl <- trainControl(method = "cv", number = 10)
+modelForward <- train(Outcome ~ . -SkinThickness.., data = db, method = "glm", 
+                      family = "binomial", trControl = tCtrl)
+
+print(modelForward)
+1 - modelForward$results[["Accuracy"]]
+```
+
+#2d
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+glmBackward <- bestglm(Xy = db, family = binomial, IC = "AIC", 
+                       method = "backward")
+glmBackward$BestModel
+
+tCtrl <- trainControl(method = "cv", number = 10)
+modelBackward <- train(Outcome ~ . -SkinThickness.., data = db, method = "glm", 
+                       family = "binomial", trControl = tCtrl)
+
+print(modelBackward)
+```
+
+#2e
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+x <- model.matrix(Outcome~., data = db)[,-1]
+y <- as.numeric(db$Outcome)
+
+ridgeCV <- cv.glmnet(x, y, alpha = 0, family = "binomial", nfolds=10)
+ridgeFit <- glmnet(x, y, alpha = 0, family = "binomial",
+                lambda = ridgeCV$lambda.min)
+
+coef(ridgeFit)
+
+tCtrl <- trainControl(method = "cv", number = 10)
+modelRidge <- train(Outcome ~ . -SkinThickness.., data = db, method = "glm", 
+                    family = "binomial", trControl = tCtrl)
+
+print(modelRidge)
+1 - modelRidge$results[["Accuracy"]]
+```
+
+#2f
+```{r, fig.show = 'hide', results = 'hide', message = FALSE, warning = FALSE}
+x <- model.matrix(Outcome~., data = db)[,-1]
+y <- as.numeric(db$Outcome)
+
+lassoCV <- cv.glmnet(x, y, alpha = 1, family = "binomial", nfolds=10)
+lassoFit <- glmnet(x, y, alpha = 1, family = "binomial",
+                lambda = lassoCV$lambda.min)
+
+coef(lassoFit)
+
+tCtrl <- trainControl(method = "cv", number = 10)
+modelLasso <- train(Outcome ~ . -SkinThickness.., data = db, method = "glm", 
+                    family = "binomial", trControl = tCtrl)
+
+print(modelLasso)
+1 - modelLasso$results[["Accuracy"]]
+```
+
+
+
+
+
+
+
+
